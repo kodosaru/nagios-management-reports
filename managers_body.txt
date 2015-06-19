@@ -1,0 +1,5 @@
+Hello Team Managers,
+
+Attached are the weekly "Manager Duty Pager Alerts" reports. These spreadsheets
+are generated every Thursday morning by a cronjob on nagios-monitor. All times
+have been converted from UTC to EST.

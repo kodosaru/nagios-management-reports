@@ -1,0 +1,6 @@
+Hello Windows Team,
+
+Attached are the weekly "Windows Duty Pager Alerts" reports. These spreadsheets
+are generated every Thursday morning by a cronjob on nagios-monitor. The second
+version of the report includes recovery events. All times have been converted from
+UTC to EST.
