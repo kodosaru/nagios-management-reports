@@ -5,54 +5,58 @@
 #	per John Rouillard's request
 
 # Program arguments:
-# 1st date in MM/DD/YYYY format 
-# 2nd cron job: true or false
-# 3rd debug mode: true or false
-# 4th report O/S selector: unix, windows dba, or other
-# 5th report source selector: db, or log 
+# 1st start date and time in "MM/DD/YYYY HH:MM" military time format. e.g. "06/11/2015 13:20" 
+# 2nd end date and time in "MM/DD/YYYY HH:MM" military time format.
+# 3rd cron job: true or false
+# 4th debug mode: true or false
+# 5th report O/S selector: unix, windows dba, or other
 
 require 'rubygems'
 require 'spreadsheet'
 require 'date'
 require 'mysql'
 require 'json'
-require 'misc-func'
-require 'Notification'
+require 'active_support/all'
+require_relative 'Notification'
+require_relative 'functions'
 
-report_destination="/home/Nagios"
+if ARGV.length != 5
+	puts "You submitted "+ARGV.length.to_s+" arguments."
+	puts "This program requires five arguments: start time, end time, debug flag, recovery flag, and O/S"
+	puts "     Ex. ruby alerts-report-new.rb \'06/11/2015 10:00\' \'06/18/2015 09:59\' false true Unix" 
+	puts "The start and end date/time must be enclosed by quotes!"
+	exit 0
+end 
 
-Spreadsheet.client_encoding = 'UTF-8'
-book = Spreadsheet::Workbook.new
-sheet1 = book.create_worksheet :name => 'Alerts'
-date_format = Spreadsheet::Format.new :number_format => 'DD.MM.YYYY'
-NCOLS=8
-UCFACT=0.5
-
-if ARGV.length == 0 
-	puts "You must pass the beginning date of the report into the program: \"DD/MM/YYYY\""
-	exit(1)
-end
-
-if ARGV[1] =="true"
-	# If cronjob run on Friday 
-	cronjob=true 
-	period_start_date=DateTime.strptime(ARGV[0], "%m/%d/%Y")-8
-	period_end_date=DateTime.strptime(ARGV[0], "%m/%d/%Y")-2
-else
-	# If on demand run on any day
-	cronjob=false
-	period_start_date=DateTime.strptime(ARGV[0], "%m/%d/%Y")
-	period_end_date=DateTime.strptime(ARGV[0], "%m/%d/%Y")+6
-end
-
-if ARGV[2] =="true"
+if ARGV[2].downcase == "true"
 	debug=true
-	puts "Period start date: "+period_start_date.strftime("%m/%d/%Y")
-	puts "Period end date: "+period_end_date.strftime("%m/%d/%Y")
 else
 	debug=false
 end
+
+report_destination="/usr/local/nagios-management-reports"
 verbose=false
+
+# Convert to same DateTime class in the UTC time zone as in Nagios database 
+utc_offset="-04:00" # Assume time input by user is EST
+
+arr=ARGV[0].split('/')
+month=arr[0].to_i
+date=arr[1].to_i
+year=arr[2].split[0].to_i
+time=arr[2].split[1].to_i
+hour=arr[2].split[1].split(':')[0].to_i
+minute=arr[2].split[1].split(':')[1].to_i
+start_time=DateTime.new(year,month,date,hour,minute,0,utc_offset).utc
+
+arr=ARGV[1].split('/')
+month=arr[0].to_i
+date=arr[1].to_i
+year=arr[2].split[0].to_i
+time=arr[2].split[1].to_i
+hour=arr[2].split[1].split(':')[0].to_i
+minute=arr[2].split[1].split(':')[1].to_i
+end_time=DateTime.new(year,month,date,hour,minute,59,utc_offset).utc
 
 if ARGV[3] =="true"
 	print_recovery=true
@@ -66,19 +70,28 @@ if ! (os_selector == "unix" || os_selector == "windows" || os_selector == "dba" 
 	exit(1)
 end
 
-# This argument select the data source as either the Nagios MySQL DB or the log files
-data_source=ARGV[5].downcase
-if ! (data_source=="db" || data_source=="log")  
-	puts the data source argument must be equal to "db" or "log"
-	exit(1)
+if debug
+	puts
+	puts "Start date, time and UTC offset: "+start_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m/%d/%Y %H:%M EST")
+	puts "End date, time, and UTC offset: "+end_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m/%d/%Y %H:%M EST")
+	if debug
+		puts "Debug mode is on"
+	else
+		puts "Debug mode is off"
+	end
+	puts "Recovery record will be printed"
+	puts "OS is "+os_selector.upcase
+	puts "Report from "+start_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m/%d/%Y %H:%M")+\
+" to "+end_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m/%d/%Y %H:%M")+" EST" 
+	puts "Nagio Alerts: Source MySQL Database on Host \"monitor-global-10\"\n" 
 end
 
-# Friday's log has thursday's data
-log_date=period_start_date+1
-if debug
-	puts "Report from "+period_start_date.strftime("%m/%d/%Y")+" till "+(period_end_date).strftime("%m/%d/%Y") 
-	puts "Nagio Alerts: Source \"var/nagios.log\" on \"monitor-ah\"\n" 
-end
+Spreadsheet.client_encoding = 'UTF-8'
+book = Spreadsheet::Workbook.new
+sheet1 = book.create_worksheet :name => 'Alerts'
+date_format = Spreadsheet::Format.new :number_format => 'DD.MM.YYYY'
+NCOLS=8
+UCFACT=0.5
 bold_blue=Spreadsheet::Format.new :color => :blue,
                                  :weight => :bold,
                                  :size => 12
@@ -113,7 +126,8 @@ else
 	temp=os_selector[0].upcase+os_selector[1..-1]
 	sheet1.row(0).push temp+" Duty Pager Alerts" 
 end
-sheet1.row(1).push "Week of "+period_start_date.strftime("%m/%d/%Y") 
+sheet1.row(1).push "For Period from "+start_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m/%d/%Y %H:%M")+\
+" to "+end_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m/%d/%Y %H:%M")+" EST" 
 sheet1.row(2).push
 sheet1.row(3).push "Summary" 
 sheet1.row(4).push "","Alerts" 
@@ -144,27 +158,31 @@ prev_recovery_host=""
 prev_recovery_service=""
 
 # Open Nagios database
-con = Mysql.new 'hostname', 'user', 'password', 'database', port 
+con = Mysql.new '<host_name>', '<user_name>', '', '<database>', 3306
 
 # obj1 = nagios_objects
 # obj2 = nagios_objects
 
 # Construct MySQL SELECT statement
-rs=con.query 'SELECT obj1.objecttype_id as objecttype_id, obj1.name1 AS host_name, obj1.name2 AS service_description, obj2.name1 AS contact_name, obj3.name1 AS notification_command, nagios_contactnotifications.contactnotification_id, nagios_contactnotifications.contact_object_id, nagios_contactnotificationmethods.command_object_id, nagios_contactnotificationmethods.command_args, nagios_contactnotificationmethods.contactnotificationmethod_id, nagios_notifications.*, obj4.alias as contact_alias FROM nagios_notifications  
+where_clause=" WHERE nagios_notifications.start_time >= '"+start_time.to_s.gsub!('+00:00','\'').gsub!('T',' ')
+where_clause+=" AND nagios_notifications.end_time <= '"+end_time.to_s.gsub!('+00:00','\'').gsub!('T',' ')
+if debug
+	puts "SQL \'WHERE\' clause: "+where_clause
+end
+rs=con.query 'SELECT obj1.objecttype_id as objecttype_id, obj1.name1 AS host_name, obj1.name2 AS service_description, obj2.name1 AS contact_name, obj3.name1 AS notification_command, nagios_contactnotifications.contactnotification_id, nagios_contactnotifications.contact_object_id, nagios_contactnotificationmethods.command_object_id, nagios_contactnotificationmethods.command_args, nagios_contactnotificationmethods.contactnotificationmethod_id, nagios_notifications.*, obj4.alias as contact_alias FROM nagios_notifications 
  
 LEFT JOIN nagios_objects as obj1 ON nagios_notifications.object_id=obj1.object_id 
 LEFT JOIN nagios_contactnotifications ON nagios_notifications.notification_id=nagios_contactnotifications.notification_id 
 LEFT JOIN nagios_objects as obj2 ON nagios_contactnotifications.contact_object_id=obj2.object_id 
 LEFT JOIN nagios_contactnotificationmethods ON nagios_contactnotifications.contactnotification_id=nagios_contactnotificationmethods.contactnotification_id
 LEFT JOIN nagios_objects as obj3 ON nagios_contactnotificationmethods.command_object_id=obj3.object_id
-LEFT JOIN nagios_contacts as obj4 ON nagios_contactnotifications.contact_object_id=obj4.contact_object_id'
+LEFT JOIN nagios_contacts as obj4 ON nagios_contactnotifications.contact_object_id=obj4.contact_object_id'+where_clause
 
 #puts JSON.dump rs.fetch_row
 #puts JSON.dump rs.fetch_hash
 #puts object_type(rs) 
 #puts rs.inspect
-
-# Loop through records
+# Loop through records nrec=0
 nrec=0
 rs.each do |objecttype_id,host_name,service_description,contact_name,notification_command,contactnotification_id,contact_object_id,command_object_id,command_args,contactnotificationmethod_id,notification_id,instance_id,notification_type,notification_reason,object_id,start_time,start_time_usec,end_time,end_time_usec,state,output,long_output,escalated,contactsnotified,contact_alias|
 
@@ -456,9 +474,15 @@ sheet1[7,2]=is_daytime_weekend_cnt
 sheet1[8,2]=is_sleep_period_weekend_cnt
 sheet1[10,2]=incident_cnt
 
+st=start_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m-%d-%Y_%H:%M")
+et=end_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m-%d-%Y_%H:%M")
 if print_recovery
-	book.write report_destination+"/"+os_selector+"_alerts_with_recovery_"+(period_start_date).strftime("%m-%d")+"_to_"+(period_start_date+6).strftime("%m-%d")+".xls"
+	spreadsheet_file=report_destination+"/"+os_selector+"_alerts_with_recovery_"+st+"_to_"+et+"_EST.xls"
 else
-	book.write report_destination+"/"+os_selector+"_alerts_"+(period_start_date).strftime("%m-%d")+"_to_"+(period_start_date+6).strftime("%m-%d")+".xls"
+	spreadsheet_file=report_destination+"/"+os_selector+"_alerts_"+st+"_to_"+et+"_EST.xls"
+end
+book.write spreadsheet_file 
+if debug
+	puts "Wrote out file "+spreadsheet_file 
 end
 exit(0)
