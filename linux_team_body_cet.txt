@@ -1,0 +1,5 @@
+Hello Linux Team,
+
+Attached is the weekly "Unix Duty Pager Alerts" report. This spreadsheet
+is generated every Thursday morning by a cronjob on nagios-monitor. All times
+have been converted from UTC to EST.

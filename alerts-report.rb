@@ -10,6 +10,7 @@
 # 3rd cron job: true or false
 # 4th debug mode: true or false
 # 5th report O/S selector: unix, windows dba, or other
+# 6th time zone for report output (display only) 
 
 require 'rubygems'
 require 'spreadsheet'
@@ -19,11 +20,12 @@ require 'json'
 require 'active_support/all'
 require_relative 'Notification'
 require_relative 'functions'
+require_relative 'authentication'
 
-if ARGV.length != 5
+if ARGV.length != 6
 	puts "You submitted "+ARGV.length.to_s+" arguments."
-	puts "This program requires five arguments: start time, end time, debug flag, recovery flag, and O/S"
-	puts "     Ex. ruby alerts-report-new.rb \'06/11/2015 10:00\' \'06/18/2015 09:59\' false true Unix" 
+	puts "This program requires six arguments: start time, end time, debug flag, recovery flag, O/S, and output time zone"
+	puts "     Ex. ruby alerts-report-new.rb \'06/11/2015 10:00\' \'06/18/2015 09:59\' false true Unix EDT" 
 	puts "The start and end date/time must be enclosed by quotes!"
 	exit 0
 end 
@@ -34,11 +36,8 @@ else
 	debug=false
 end
 
-report_destination="/usr/local/nagios-management-reports"
+report_home="/usr/local/nagios-management-reports"
 verbose=false
-
-# Convert to same DateTime class in the UTC time zone as in Nagios database 
-utc_offset="-04:00" # Assume time input by user is EST
 
 arr=ARGV[0].split('/')
 month=arr[0].to_i
@@ -47,7 +46,7 @@ year=arr[2].split[0].to_i
 time=arr[2].split[1].to_i
 hour=arr[2].split[1].split(':')[0].to_i
 minute=arr[2].split[1].split(':')[1].to_i
-start_time=DateTime.new(year,month,date,hour,minute,0,utc_offset).utc
+start_time=DateTime.new(year,month,date,hour,minute,0,0)
 
 arr=ARGV[1].split('/')
 month=arr[0].to_i
@@ -56,7 +55,7 @@ year=arr[2].split[0].to_i
 time=arr[2].split[1].to_i
 hour=arr[2].split[1].split(':')[0].to_i
 minute=arr[2].split[1].split(':')[1].to_i
-end_time=DateTime.new(year,month,date,hour,minute,59,utc_offset).utc
+end_time=DateTime.new(year,month,date,hour,minute,59,0)
 
 if ARGV[3] =="true"
 	print_recovery=true
@@ -64,26 +63,40 @@ else
 	print_recovery=false
 end
 
-os_selector = ARGV[4].dup.downcase
+os_selector=ARGV[4].downcase
 if ! (os_selector == "unix" || os_selector == "windows" || os_selector == "dba" || os_selector == "other")
 	puts "You must choose a report os_selector for the 3rd argument: Unix, Windows, DBA or Other" 
 	exit(1)
 end
 
+time_zone= ARGV[5]
+if ! ((TZInfo::Timezone.all_identifiers.include? time_zone) || (ActiveSupport::TimeZone::MAPPING.has_key? time_zone))
+	puts "The time zone identifier passed to this program is not valid: "+time_zone
+	puts "You must choose one of these: "
+	TZInfo::Timezone.all_identifiers.each do |zone|;p zone;end
+	ActiveSupport::TimeZone::MAPPING.each do |location, zone|;puts "\""+location+"\""+zone;end
+	exit 1
+end
+
 if debug
 	puts
-	puts "Start date, time and UTC offset: "+start_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m/%d/%Y %H:%M EST")
-	puts "End date, time, and UTC offset: "+end_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m/%d/%Y %H:%M EST")
+	puts "Values used in the Ruby Script:"
+	puts "\tSystem time zone: "+Time.now.getlocal.zone
+	puts "\tSystem local time: "+Time.now.getlocal.strftime("%m/%d/%Y %H:%M:%S %Z")
+	puts "\tRequested start time (UTC): "+start_time.strftime("%m/%d/%Y %H:%M:%S %Z")
+	puts "\tRequested end time (UTC): "+end_time.strftime("%m/%d/%Y %H:%M:%S %Z")
+	puts "\tRequested output time zone: "+time_zone
+	puts "\tStart date as would be displayed: "+start_time.in_time_zone(time_zone).strftime("%m/%d/%Y %H:%M:%S %Z")
+	puts "\tEnd time as would be displayed: "+end_time.in_time_zone(time_zone).strftime("%m/%d/%Y %H:%M:%S %Z")
 	if debug
-		puts "Debug mode is on"
+		puts "\tDebug mode is on"
 	else
-		puts "Debug mode is off"
+		puts "\tDebug mode is off"
 	end
-	puts "Recovery record will be printed"
-	puts "OS is "+os_selector.upcase
-	puts "Report from "+start_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m/%d/%Y %H:%M")+\
-" to "+end_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m/%d/%Y %H:%M")+" EST" 
-	puts "Nagio Alerts: Source MySQL Database on Host \"monitor-global-10\"\n" 
+	puts "\tRecovery record will be printed"
+	puts "\tOS is "+os_selector.upcase
+	puts "\tSource is MySQL database on host \""+$dbhost+"\"\n" 
+	puts
 end
 
 Spreadsheet.client_encoding = 'UTF-8'
@@ -126,8 +139,8 @@ else
 	temp=os_selector[0].upcase+os_selector[1..-1]
 	sheet1.row(0).push temp+" Duty Pager Alerts" 
 end
-sheet1.row(1).push "For Period from "+start_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m/%d/%Y %H:%M")+\
-" to "+end_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m/%d/%Y %H:%M")+" EST" 
+sheet1.row(1).push "For Period from "+start_time.in_time_zone(time_zone).strftime("%m/%d/%Y %H:%M %Z")+\
+" to "+end_time.in_time_zone(time_zone).strftime("%m/%d/%Y %H:%M %Z")
 sheet1.row(2).push
 sheet1.row(3).push "Summary" 
 sheet1.row(4).push "","Alerts" 
@@ -158,7 +171,8 @@ prev_recovery_host=""
 prev_recovery_service=""
 
 # Open Nagios database
-con = Mysql.new '<host_name>', '<user_name>', '', '<database>', 3306
+# These variables are defined in the file authentication.rb
+con = Mysql.new $dbhost, $user, $password, $database, $port 
 
 # obj1 = nagios_objects
 # obj2 = nagios_objects
@@ -202,17 +216,17 @@ rs.each do |objecttype_id,host_name,service_description,contact_name,notificatio
 		notification_type=notification_type.to_i
 		notification_reason=notification_reason.to_i
 		object_id=object_id.to_i
+		start_time=start_time.to_datetime
 		start_time_usec=start_time_usec.to_i
+		end_time=end_time.to_datetime
 		end_time_usec=end_time_usec.to_i
 		state=state.to_i
 		escalated=escalated.to_i
 		contactsnotified=contactsnotified.to_i
 
-		# Date conversion
-		dt_est=DateTime.iso8601(start_time.sub(/ /,'T')+"+00:00") - 4.0/24.0; 
-		# Input to DateTime constructor is in iso8601 format and converted from UTC to EST.
-		# Example: 2015-06-12T09:17:37+00:00 (EST would have appendix -04:00, Nagios use UTC)
-		dtstr=dt_est.strftime("%m/%d/%Y %H:%M")
+		# Date conversion from UTC to requested time zone for output
+		start_time_local=start_time.in_time_zone(time_zone)
+		display_time=start_time_local.strftime("%m/%d/%Y %H:%M")
 
 		is_custom_notification_record=false
 		is_recovery_record=false
@@ -234,30 +248,17 @@ rs.each do |objecttype_id,host_name,service_description,contact_name,notificatio
 
 		#	Exit Code	Status
 		#	0	OK
-		#	1	WARNING
+		#	1	WARNING for service, but CRITICAL for host
 		#	2	CRITICAL
 		#	3	UNKNOWN
 
-		if debug
-			if state == 0
-				status="OK: "+state.to_s
-				is_recovery_record=true
-			elsif state == 1
-				status="WARNING: "+state.to_s
-			elsif state == 2
-				status="CRITICAL: "+state.to_s
-			else
-				status="UNKNOWN: "+state.to_s 
-			end
+		if state == 0
+			status="OK"
+			is_recovery_record=true
+		elsif state == 1 || state == 2
+			status="CRITICAL"
 		else
-			if state == 0
-				status="OK"
-				is_recovery_record=true
-			elsif state == 1 || state == 2
-				status="CRITICAL"
-			else
-				status="UNKNOWN: "+state.to_s 
-			end
+			status="UNKNOWN: "+state.to_s 
 		end
 
 		if notification_command =~ /notify-host/
@@ -272,11 +273,11 @@ rs.each do |objecttype_id,host_name,service_description,contact_name,notificatio
 		sheet1[i,5]=" "
 
 		# Determine if alert occured during sleep interval 9:00 p.m. till 7:00 a.m. the next morning
-		dttmpstr=dt_est.strftime("%m/%d/%Y 00:00")
+		dttmpstr=start_time_local.strftime("%m/%d/%Y 00:00")
 		dttmp=DateTime.strptime(dttmpstr, "%m/%d/%Y") 
 		previous_day_sleep_start=dttmp.to_time.to_i-10800
 		previous_day_sleep_end=previous_day_sleep_start+36000
-		epoch_datetime=dt_est.to_time.to_i
+		epoch_datetime=start_time_local.to_time.to_i
 		sleep_start=dttmp.to_time.to_i+75600 
 		sleep_end=sleep_start+36000
 
@@ -288,7 +289,7 @@ rs.each do |objecttype_id,host_name,service_description,contact_name,notificatio
 		end
 
 		# Determine if weekend
-		if dt_est.wday == 0 || dt_est.wday == 6
+		if start_time_local.wday == 0 || start_time_local.wday == 6
 			is_weekend=true
 		else
 			is_weekend=false
@@ -351,16 +352,16 @@ rs.each do |objecttype_id,host_name,service_description,contact_name,notificatio
 				end
 				
 				# Print row
-				col_width_char[0]=dtstr.length + UCFACT * count_upper(dtstr) > col_width_char[0] ? dtstr.length + UCFACT * count_upper(dtstr) : col_width_char[0] 	
+				col_width_char[0]=display_time.length + UCFACT * count_upper(display_time) > col_width_char[0] ? display_time.length + UCFACT * count_upper(display_time) : col_width_char[0] 	
 				col_width_char[1]=host_name.length + UCFACT * count_upper(host_name) > col_width_char[1] ? host_name.length + UCFACT * count_upper(host_name) : col_width_char[1]	
 				col_width_char[2]=service.length + UCFACT * count_upper(service) > col_width_char[2] ? service.length + UCFACT * count_upper(service) : col_width_char[2]	
 				col_width_char[3]=status.length + UCFACT * count_upper(status) > col_width_char[3] ? status.length + UCFACT * count_upper(status) : col_width_char[3]	
 				col_width_char[4]=long_output.strip.length + UCFACT * count_upper(long_output.strip) > col_width_char[4] ? long_output.strip.length + UCFACT * count_upper(long_output.strip) : col_width_char[4]	
-				sheet1.update_row i,dtstr,host_name,service,status,long_output.strip
+				sheet1.update_row i,display_time,host_name,service,status,long_output.strip
 				if debug
-					#puts
-					#notification.typed_dump;	
-					#printf("Row: %d\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%d\n",i,dtstr,host_name,service,incident_cnt,is_recovery_record,long_output,status,is_sleep_period,dt_est.wday)
+					puts
+					notification.typed_dump;	
+					printf("Row: %d\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%d\n",i,display_time,host_name,service,incident_cnt,is_recovery_record,long_output,status,is_sleep_period,start_time_local.wday)
 				end
 
 				# Print if night
@@ -394,16 +395,16 @@ rs.each do |objecttype_id,host_name,service_description,contact_name,notificatio
 
 			# Print recovery record if recovery version of report
 			if print_recovery && !(host_name == prev_recovery_host && service == prev_recovery_service) && is_recovery_record
-				col_width_char[0]=dtstr.length + UCFACT * count_upper(dtstr) > col_width_char[0] ? dtstr.length + UCFACT * count_upper(dtstr) : col_width_char[0] 	
+				col_width_char[0]=display_time.length + UCFACT * count_upper(display_time) > col_width_char[0] ? display_time.length + UCFACT * count_upper(display_time) : col_width_char[0] 	
 				col_width_char[1]=host_name.length + UCFACT * count_upper(host_name) > col_width_char[1] ? host_name.length + UCFACT * count_upper(host_name) : col_width_char[1]	
 				col_width_char[2]=service.length + UCFACT * count_upper(service) > col_width_char[2] ? service.length + UCFACT * count_upper(service) : col_width_char[2]	
 				col_width_char[3]=status.length + UCFACT * count_upper(status) > col_width_char[3] ? status.length + UCFACT * count_upper(status) : col_width_char[3]	
 				col_width_char[4]=long_output.strip.length + UCFACT * count_upper(long_output.strip) > col_width_char[4] ? long_output.strip.length + UCFACT * count_upper(long_output.strip) : col_width_char[4]	
-				sheet1.update_row i,dtstr,host_name,service,status,long_output.strip
+				sheet1.update_row i,display_time,host_name,service,status,long_output.strip
 				if debug
 					puts
 					notification.typed_dump;	
-					printf("Row rec: %d\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%d\n",i,dtstr,host_name,service,incident_cnt,is_recovery_record,status,long_output,is_sleep_period,dt_est.wday)
+					printf("Row rec: %d\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\t%d\n",i,display_time,host_name,service,incident_cnt,is_recovery_record,status,long_output,is_sleep_period,start_time_local.wday)
 				end
 
 				# Print if night
@@ -474,12 +475,13 @@ sheet1[7,2]=is_daytime_weekend_cnt
 sheet1[8,2]=is_sleep_period_weekend_cnt
 sheet1[10,2]=incident_cnt
 
-st=start_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m-%d-%Y_%H:%M")
-et=end_time.in_time_zone('Eastern Time (US & Canada)').strftime("%m-%d-%Y_%H:%M")
+st=start_time.in_time_zone(time_zone).strftime("%m-%d-%Y_%H:%M")
+et=end_time.in_time_zone(time_zone).strftime("%m-%d-%Y_%H:%M")
+temp=time_zone.gsub(/[\/\\ ]/, '/' => '_', '\\' => '_', ' ' => '_').gsub(':','-')
 if print_recovery
-	spreadsheet_file=report_destination+"/"+os_selector+"_alerts_with_recovery_"+st+"_to_"+et+"_EST.xls"
+	spreadsheet_file=report_home+"/"+os_selector+"_alerts_with_recovery_"+st+"_to_"+et+"_"+temp+".xls"
 else
-	spreadsheet_file=report_destination+"/"+os_selector+"_alerts_"+st+"_to_"+et+"_EST.xls"
+	spreadsheet_file=report_home+"/"+os_selector+"_alerts_"+st+"_to_"+et+"_"+temp+".xls"
 end
 book.write spreadsheet_file 
 if debug
