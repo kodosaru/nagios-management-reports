@@ -5,8 +5,8 @@
 #	per John Rouillard's request
 
 # Program arguments:
-# 1st start date and time in "MM/DD/YYYY HH:MM" military time format. e.g. "06/11/2015 13:20" 
-# 2nd end date and time in "MM/DD/YYYY HH:MM" military time format.
+# 1st start date and time in "MM/DD/YYYY HH:MM" UTC 24-hour time format. e.g. "06/11/2015 13:20" 
+# 2nd end date and time in "MM/DD/YYYY HH:MM" UTC 24-hour time format.
 # 3rd cron job: true or false
 # 4th debug mode: true or false
 # 5th report O/S selector: unix, windows dba, or other
