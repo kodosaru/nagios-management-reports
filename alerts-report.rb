@@ -139,7 +139,7 @@ else
 	temp=os_selector[0].upcase+os_selector[1..-1]
 	sheet1.row(0).push temp+" Duty Pager Alerts" 
 end
-sheet1.row(1).push "For Period from "+start_time.in_time_zone(time_zone).strftime("%m/%d/%Y %H:%M %Z")+\
+sheet1.row(1).push "For Period from "+start_time.in_time_zone(time_zone).strftime("%m/%d/%Y %H:%M")+\
 " to "+end_time.in_time_zone(time_zone).strftime("%m/%d/%Y %H:%M %Z")
 sheet1.row(2).push
 sheet1.row(3).push "Summary" 
@@ -475,9 +475,9 @@ sheet1[7,2]=is_daytime_weekend_cnt
 sheet1[8,2]=is_sleep_period_weekend_cnt
 sheet1[10,2]=incident_cnt
 
-st=start_time.in_time_zone(time_zone).strftime("%m-%d-%Y_%H:%M")
-et=end_time.in_time_zone(time_zone).strftime("%m-%d-%Y_%H:%M")
-temp=time_zone.gsub(/[\/\\ ]/, '/' => '_', '\\' => '_', ' ' => '_').gsub(':','-')
+st=start_time.in_time_zone(time_zone).strftime("%m-%d-%Y_%H%M")
+et=end_time.in_time_zone(time_zone).strftime("%m-%d-%Y_%H%M")
+temp=time_zone.gsub(/[\/\\ \(\)\:<>"\|\?\*&]/, '/' => '_', '\\' => '_', ' ' => '_', '(' => '', ')' => '', ':' => '', '<' => '', '>' => '', '"' => '', '|' => '', '?' => '', '*' => '', '&' => '').gsub('__','_')
 if print_recovery
 	spreadsheet_file=report_home+"/"+os_selector+"_alerts_with_recovery_"+st+"_to_"+et+"_"+temp+".xls"
 else

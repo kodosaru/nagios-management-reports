@@ -3,13 +3,15 @@
 # 20150623 djohnson Added print recovery line selector
 # 20150624 djohnson Made changes to support new report that runs
 #                   against database instead of logs 
+# 20150702 djohnson Added India team
 
 # Set the destination directory for the reports
 report_home="/usr/local/nagios-management-reports"
+log_file="/var/log/nagios-management-reports/`date +%Y%m%d_%H%M.log`"
 
 # Set if cronjob
-#CRON_JOB=true
-CRON_JOB=false
+CRON_JOB=true
+#CRON_JOB=false
 
 # Set debugging to true if want diagnostics sent to stdout
 #DEBUG=true
@@ -32,8 +34,8 @@ else
 	# output time/date for different time zone and uses this as a reference
 	# Example UTC equals EST +4 hours for summer daylight savings time (+5 for winter) 
 	# EST is actually EDT if using daylight savings time
-	start_time="05/28/2015 14:00"
-	end_time="06/04/2015 13:59"
+	start_time="06/25/2015 14:00"
+	end_time="07/02/2015 13:59"
 fi
 
 # Set if recovery line is printed 
@@ -55,8 +57,8 @@ MAIL=true
 SKIP_RPT_GEN=false
 
 # Send a special message in the body of the email
-SPEC_MSG=true
-#SPEC_MSG=false
+#SPEC_MSG=true
+SPEC_MSG=false
 
 # Choose if you want to send mail
 if [ $MAIL == "true" ]; then
@@ -71,6 +73,7 @@ ruby_script="alerts-report.rb"
 if [ $DEBUG == "true" ] && [ $FORCE_DELIVER == "false" ]; then
 	LINUX_TEAM_LIST=test.list
 	LINUX_TEAM_LIST_CET=test.list
+	LINUX_TEAM_LIST_IST=test.list
 	WINDOWS_TEAM_LIST=test.list
 	DBA_TEAM_LIST=test.list
 	OTHER_TEAM_LIST=test.list
@@ -78,6 +81,7 @@ if [ $DEBUG == "true" ] && [ $FORCE_DELIVER == "false" ]; then
 else
 	LINUX_TEAM_LIST=linux_team.list
 	LINUX_TEAM_LIST_CET=linux_team_cet.list
+	LINUX_TEAM_LIST_IST=linux_team_ist.list
 	WINDOWS_TEAM_LIST=windows_team.list
 	DBA_TEAM_LIST=dba_team.list
 	OTHER_TEAM_LIST=other_team.list
@@ -109,7 +113,6 @@ if [ $SKIP_RPT_GEN == "false" ]; then
 	# Generate all three reports: Unix, Windows and Other 
 	#os_list="unix"
 	os_list="unix windows dba other"
-
 	for os in $os_list 
 	do
 		$report_home"/"$ruby_script "$start_time" "$end_time" $DEBUG $RECOVERY $os "$TIME_ZONE"
@@ -120,9 +123,8 @@ if [ $SKIP_RPT_GEN == "false" ]; then
 	done
 fi
 
-temp=`echo $TIME_ZONE | tr '/\ :' '___-'` 
-temp=${temp:0:12}
-regex='_[0-9]{2}-[0-9]{2}-[0-9]{4}_[0-9:]{5}_to_[0-9]{2}-[0-9]{2}-[0-9]{4}_[0-9:]{5}_'$temp'.+\.xls$'
+temp=`echo $TIME_ZONE | tr '/\ ' '___' | tr -d '()<>:"?*&' | sed -e 's/__/_/g'` 
+regex='_[0-9]{2}-[0-9]{2}-[0-9]{4}_[0-9]{4}_to_[0-9]{2}-[0-9]{2}-[0-9]{4}_[0-9]{4}_'$temp'\.xls$'
 if [ $RECOVERY == "true" ]
 then 
 	unix_filename=`/bin/find  $report_home -maxdepth 1 | /bin/egrep '^.+unix_alerts_with_recovery'$regex`
@@ -137,29 +139,44 @@ else
 fi
 
 if [ $DEBUG == "true" ]; then
+	echo Searching for:
+	if [ $RECOVERY == "true" ]
+	then 
+		echo '^.+unix_alerts_with_recovery'$regex
+		echo '^.+windows_alerts_with_recovery'$regex
+		echo '^.+dba_alerts_with_recovery'$regex
+		echo '^.+other_alerts_with_recovery'$regex
+	else
+		echo '^.+unix_alerts'$regex
+		echo '^.+windows'$regex
+		echo '^.+dba_alerts'$regex
+		echo '^.+other_alerts'$regex
+	fi
+	temparr=(`ls *.xls`)
+	printf '%s\n' "${temparr[@]}"
 	if [ -f "$unix_filename" ]
 	then
-		echo Unix report created: $unix_filename
+		echo Unix report $unix_filename created
 	else
-		echo No Unix report created
+		echo No Unix report $unix_filename created
 	fi
 	if [ -f "$windows_filename" ]
 	then
-		echo Windows report created: $windows_filename
+		echo Windows report $windows_filename created
 	else
-		echo No Windows report created
+		echo No Windows report $windows_filename created
 	fi
 	if [ -f "$dba_filename" ]
 	then
-		echo DBA report created: $dba_filename
+		echo DBA report $dba_filename created
 	else
-		echo No DBA report created
+		echo No DBA report $dba_filename created
 	fi
 	if [ -f "$other_filename" ]
 	then
-		echo Other report created: $other_filename
+		echo Other report $other_filename created
 	else
-		echo No Other report created
+		echo No Other $other_filename report created
 	fi
 fi
 
@@ -176,14 +193,6 @@ if [ -n "$unix_filename" ]
 then
 	MANAGER_MAIL_CMD+=" -a "$unix_filename
 fi
-if [ -n "$unix_filename" ]
-then
-	MANAGER_MAIL_CMD+=" -a "$unix_filename
-fi
-if [ -n "$windows_filename" ]
-then
-	MANAGER_MAIL_CMD+=" -a "$windows_filename
-fi
 if [ -n "$windows_filename" ]
 then
 	MANAGER_MAIL_CMD+=" -a "$windows_filename
@@ -191,14 +200,6 @@ fi
 if [ -n "$dba_filename" ]
 then
 	MANAGER_MAIL_CMD+=" -a "$dba_filename
-fi
-if [ -n "$dba_filename" ]
-then
-	MANAGER_MAIL_CMD+=" -a "$dba_filename
-fi
-if [ -n "$other_filename" ]
-then
-	MANAGER_MAIL_CMD+=" -a "$other_filename
 fi
 if [ -n "$other_filename" ]
 then
@@ -220,6 +221,7 @@ then
 			if [ $DEBUG == "true" ]; then
 				echo cat $BODY \| $mutt_path -s "Unix Duty Pager Alerts Report" -a $unix_filename -- $recipient
 			fi
+			echo cat $BODY \| $mutt_path -s "Unix Duty Pager Alerts Report" -a $unix_filename -- $recipient >> $log_file
 			cat $BODY | $mutt_path -s "Unix Duty Pager Alerts Report" -a $unix_filename -- $recipient
 		fi
 	done < $LINUX_TEAM_LIST
@@ -239,6 +241,7 @@ then
 			if [ $DEBUG == "true" ]; then
 				echo cat $BODY \| $mutt_path -s "Windows Duty Pager Alerts Report" -a $windows_filename -- $recipient 
 			fi
+			echo cat $BODY \| $mutt_path -s "Windows Duty Pager Alerts Report" -a $windows_filename -- $recipient >> $log_file 
 			cat $BODY | $mutt_path -s "Windows Duty Pager Alerts Report" -a $windows_filename -- $recipient 
 		fi
 	done < $WINDOWS_TEAM_LIST
@@ -258,6 +261,7 @@ then
 			if [ $DEBUG == "true" ]; then
 				echo cat $BODY \| $mutt_path -s "DBA Duty Pager Alerts Report" -a $dba_filename -- $recipient 
 			fi
+			echo cat $BODY \| $mutt_path -s "DBA Duty Pager Alerts Report" -a $dba_filename -- $recipient >> $log_file 
 			cat $BODY | $mutt_path -s "DBA Duty Pager Alerts Report" -a $dba_filename -- $recipient 
 		fi
 	done < $DBA_TEAM_LIST
@@ -277,6 +281,7 @@ then
 			if [ $DEBUG == "true" ]; then
 				echo cat $BODY \| $mutt_path -s "Other Duty Pager Alerts Report" -a $other_filename -- $recipient 
 			fi
+			echo cat $BODY \| $mutt_path -s "Other Duty Pager Alerts Report" -a $other_filename -- $recipient >> $log_file 
 			cat $BODY | $mutt_path -s "Other Duty Pager Alerts Report" -a $other_filename -- $recipient 
 		fi
 	done < $OTHER_TEAM_LIST
@@ -308,6 +313,7 @@ if [ $DEBUG == "false" ] || [ $FORCE_DELIVER == "true" ]; then
 	mv $report_home"/"*.xls $report_home"/reports/"
 fi
 
+# Send the European Linux team report
 # Set the time zone for output
 TIME_ZONE="Europe/Berlin"
 
@@ -326,11 +332,9 @@ if [ $DEBUG == "true" ]; then
 	printf "\tRequested output time zone: \"%s\" - Ruby format\n" "$TIME_ZONE"
 fi
 
-# Send the European Linux team report
 if [ $SKIP_RPT_GEN == "false" ]; then
 	# Generate just the unix report 
-	os_list="unix"
-
+	os="unix"
 	$report_home"/"$ruby_script "$start_time" "$end_time" $DEBUG $RECOVERY $os "$TIME_ZONE"
 	if [ $? -ne 0 ]; then
 		printf "There was an error in the Ruby script "$ruby_script" - exiting\n"
@@ -338,40 +342,25 @@ if [ $SKIP_RPT_GEN == "false" ]; then
 	fi
 fi
 
-temp=`echo $TIME_ZONE | tr '/\ :' '____'` 
-temp=${temp:0:13}
-regex='_[0-9]{2}-[0-9]{2}-[0-9]{4}_[0-9:]{5}_to_[0-9]{2}-[0-9]{2}-[0-9]{4}_[0-9:]{5}_'$temp'\.xls$'
+temp=`echo $TIME_ZONE | tr '/\ ' '___' | tr -d '()<>:"?*&' | sed -e 's/__/_/g'` 
+regex='_[0-9]{2}-[0-9]{2}-[0-9]{4}_[0-9]{4}_to_[0-9]{2}-[0-9]{2}-[0-9]{4}_[0-9]{4}_'$temp'\.xls$'
 if [ $RECOVERY == "true" ]
 then 
 	unix_filename=`/bin/find  $report_home -maxdepth 1 | /bin/egrep '^.+unix_alerts_with_recovery'$regex`
 else
 	unix_filename=`/bin/find  $report_home -maxdepth 1 | /bin/egrep '^.+unix_alerts'$regex`
 fi
-cet_filename=${unix_filename/Europe_Berlin/CET}
-
-regex='_[0-9]{2}-[0-9]{2}-[0-9]{4}_[0-9:]{5}_to_[0-9]{2}-[0-9]{2}-[0-9]{4}_[0-9:]{5}_CET\.xls$'
-if [ -z "$cet_filename" ]
-then
-	if [ $RECOVERY == "true" ]
-	then 
-		cet_filename=`/bin/find  $report_home -maxdepth 1 | /bin/egrep '^.+unix_alerts_with_recovery'$regex`
-	else
-		cet_filename=`/bin/find  $report_home -maxdepth 1 | /bin/egrep '^.+unix_alerts'$regex`
-	fi
-else
-	mv $unix_filename $cet_filename  
-fi
 
 if [ $DEBUG == "true" ]; then
-	if [ -f "$cet_filename" ]
+	if [ -f "$unix_filename" ]
 	then
-		echo CET Unix report created: $cet_filename
+		echo CET Unix report $unix_filename created
 	else
-		echo No CET Unix report created
+		echo No CET Unix report $unix_filename created
 	fi
 fi
 
-if [ -n "$cet_filename" ]
+if [ -n "$unix_filename" ]
 then
 	if [ $DEBUG == "true" ]
 	then
@@ -382,11 +371,86 @@ then
 	do
 		if [ -z "`echo $recipient | egrep '^.*#'`" ]; then
 			if [ $DEBUG == "true" ]; then
-				echo cat $BODY \| $mutt_path -s "Unix Duty Pager Alerts Report" -a $cet_filename -- $recipient
+				echo cat $BODY \| $mutt_path -s "Unix Duty Pager Alerts Report" -a $unix_filename -- $recipient
 			fi
-			cat $BODY | $mutt_path -s "Unix Duty Pager Alerts Report" -a $cet_filename -- $recipient
+			echo cat $BODY \| $mutt_path -s "Unix Duty Pager Alerts Report" -a $unix_filename -- $recipient >> $log_file
+			cat $BODY | $mutt_path -s "Unix Duty Pager Alerts Report" -a $unix_filename -- $recipient
 		fi
 	done < $LINUX_TEAM_LIST_CET
+fi
+
+# Archive the reports
+if [ $DEBUG == "false" ] || [ $FORCE_DELIVER == "true" ]; then
+	if [ ! -d $report_home"/reports/" ]; then
+		mkdir $report_home"/reports/"
+	fi
+	mv $report_home"/"*.xls $report_home"/reports/"
+fi
+
+# Send the India Linux team report
+# Set the time zone for output
+TIME_ZONE="Asia/Kolkata"
+
+if [ $DEBUG == "true" ]; then
+	system_tz=`cat /etc/sysconfig/clock | sed 's/^ZONE="\(.*\)"/\1/'` 
+	printf "Values requested in BASH script:\n"
+	if [ $CRON_JOB == "true" ]; then
+		printf "\tRun in cronjob mode setting report period automatically\n"
+	else
+		printf "\tRun in non-cronjob mode\n"
+	fi
+	printf "\tSystem time zone: \"%s\" - Linux format\n" "$system_tz"
+	printf "\tSystem local time: %s\n" "`date`"
+	printf "\tRequested start time (UTC): %s\n" "$start_time"
+	printf "\tRequested end time (UTC): %s\n" "$end_time"
+	printf "\tRequested output time zone: \"%s\" - Ruby format\n" "$TIME_ZONE"
+fi
+
+if [ $SKIP_RPT_GEN == "false" ]; then
+	# Generate just the unix report 
+	os="unix"
+	$report_home"/"$ruby_script "$start_time" "$end_time" $DEBUG $RECOVERY $os "$TIME_ZONE"
+	if [ $? -ne 0 ]; then
+		printf "There was an error in the Ruby script "$ruby_script" - exiting\n"
+		exit 1
+	fi
+fi
+
+temp=`echo $TIME_ZONE | tr '/\ ' '___' | tr -d '()<>:"?*&' | sed -e 's/__/_/g'` 
+regex='_[0-9]{2}-[0-9]{2}-[0-9]{4}_[0-9]{4}_to_[0-9]{2}-[0-9]{2}-[0-9]{4}_[0-9]{4}_'$temp'\.xls$'
+if [ $RECOVERY == "true" ]
+then 
+	unix_filename=`/bin/find  $report_home -maxdepth 1 | /bin/egrep '^.+unix_alerts_with_recovery'$regex`
+else
+	unix_filename=`/bin/find  $report_home -maxdepth 1 | /bin/egrep '^.+unix_alerts'$regex`
+fi
+
+if [ $DEBUG == "true" ]; then
+	if [ -f "$unix_filename" ]
+	then
+		echo IST Unix report $unix_filename created
+	else
+		echo No IST Unix report $unix_filename created
+	fi
+fi
+
+if [ -n "$unix_filename" ]
+then
+	if [ $DEBUG == "true" ]
+	then
+		printf "\nSending the IST Linux report\n"
+	fi
+	BODY="linux_team_body"$BODY_SUFFIX"_ist.txt"
+	while read recipient 
+	do
+		if [ -z "`echo $recipient | egrep '^.*#'`" ]; then
+			if [ $DEBUG == "true" ]; then
+				echo cat $BODY \| $mutt_path -s "Unix Duty Pager Alerts Report" -a $unix_filename -- $recipient
+			fi
+			echo cat $BODY \| $mutt_path -s "Unix Duty Pager Alerts Report" -a $unix_filename -- $recipient >> $log_file
+			cat $BODY | $mutt_path -s "Unix Duty Pager Alerts Report" -a $unix_filename -- $recipient
+		fi
+	done < $LINUX_TEAM_LIST_IST
 fi
 
 # Archive the reports
