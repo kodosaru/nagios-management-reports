@@ -10,12 +10,12 @@ report_home="/usr/local/nagios-management-reports"
 log_file="/var/log/nagios-management-reports/`date +%Y%m%d_%H%M.log`"
 
 # Set if cronjob
-CRON_JOB=true
-#CRON_JOB=false
+#CRON_JOB=true
+CRON_JOB=false
 
 # Set debugging to true if want diagnostics sent to stdout
-#DEBUG=true
-DEBUG=false
+DEBUG=true
+#DEBUG=false
 
 # Set pager hand-off time in UTC
 pager_handoff1="14:00"
@@ -111,8 +111,8 @@ fi
 
 if [ $SKIP_RPT_GEN == "false" ]; then
 	# Generate all three reports: Unix, Windows and Other 
-	#os_list="unix"
-	os_list="unix windows dba other"
+	os_list="unix"
+	#os_list="unix windows dba other"
 	for os in $os_list 
 	do
 		$report_home"/"$ruby_script "$start_time" "$end_time" $DEBUG $RECOVERY $os "$TIME_ZONE"
